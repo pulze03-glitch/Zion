@@ -15,7 +15,6 @@ export function Sidebar() {
       <NavLink to="/" className="frost-brand" aria-label="Zion — go to home">
         <ChrysanthemumIcon size={28} className="frost-snowflake" />
         <span className="frost-wordmark">Zion</span>
-        <span className="frost-tag">by Liena</span>
       </NavLink>
 
       <nav className="layout-nav-list" aria-label="Navigation">
