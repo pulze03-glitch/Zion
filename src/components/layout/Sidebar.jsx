@@ -1,6 +1,7 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { navItems } from './navItems'
 import { getLastLibraryPath } from '../../utils/libraryHistory'
+import { ChrysanthemumIcon } from '../shared/ChrysanthemumIcon'
 
 export function Sidebar() {
   const navigate = useNavigate()
@@ -10,10 +11,10 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      {/* Frost brand — snowflake always visible, wordmark fades on hover */}
-      <NavLink to="/" className="frost-brand" aria-label="Frost — go to home">
-        <span className="frost-snowflake" aria-hidden>❄</span>
-        <span className="frost-wordmark">Frost</span>
+      {/* Zion brand — snowflake always visible, wordmark fades on hover */}
+      <NavLink to="/" className="frost-brand" aria-label="Zion — go to home">
+        <ChrysanthemumIcon size={28} className="frost-snowflake" />
+        <span className="frost-wordmark">Zion</span>
         <span className="frost-tag">by Liena</span>
       </NavLink>
 

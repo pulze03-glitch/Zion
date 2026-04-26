@@ -179,11 +179,10 @@ function SummerFireflies({ count }) {
 // ─── Main export ──────────────────────────────────────────────────────────────
 export function SeasonEffect({ season }) {
   if (!season || season === 'off') return null
-  // Skip particles entirely on phones — too expensive
-  if (window.matchMedia('(max-width: 767px)').matches) return null
   const cfg = SEASONS[season]
   if (!cfg) return null
-  if (cfg.type === 'canvas') return <SummerFireflies count={Math.min(cfg.count, 14)} />
-  const mobileCfg = { ...cfg, count: Math.min(cfg.count, 16) }
-  return <CSSParticles season={season} cfg={mobileCfg} />
+  const isMobile = window.matchMedia('(max-width: 767px)').matches
+  if (cfg.type === 'canvas') return <SummerFireflies count={isMobile ? 12 : cfg.count} />
+  const activeCfg = isMobile ? { ...cfg, count: Math.min(cfg.count, 16) } : cfg
+  return <CSSParticles season={season} cfg={activeCfg} />
 }

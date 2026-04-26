@@ -143,7 +143,7 @@ export function PlaylistDetailPage() {
               </button>
             </div>
             <p className="share-modal-hint">
-              Send this link to a friend. When they open it, Frost will offer to import the playlist.
+              Send this link to a friend. When they open it, Zion will offer to import the playlist.
             </p>
             <div className="share-url-row">
               <input

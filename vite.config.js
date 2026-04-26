@@ -24,8 +24,8 @@ export default defineConfig({
       devOptions: { enabled: true },
       includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
       manifest: {
-        name: 'Frost by Liena',
-        short_name: 'Frost',
+        name: 'Zion by Liena',
+        short_name: 'Zion',
         description: 'Snow-themed music player PWA',
         theme_color: '#06070a',
         background_color: '#06070a',

@@ -248,7 +248,7 @@ a {
   /* ── Hub page ── */
   .hub-view { padding: 0 0 120px; }
   .hub-search-bar { padding: 8px 16px; gap: 6px; }
-  .hub-bar-snowflake { font-size: 0.9rem; }
+  .hub-bar-snowflake { width: 1rem; height: 1rem; object-fit: contain; }
   .hub-bar-wordmark { font-size: 0.78rem; }
   .hub-search-input { font-size: 0.85rem; }
   .hub-greeting-bar { padding: 12px 16px 8px; }
@@ -397,7 +397,7 @@ a {
 .sidebar-overlay { display: none; }
 .sidebar-toggle-btn { display: none; }
 
-/* Frost brand — snowflake only in rail, wordmark fades in on expand */
+/* Zion brand — snowflake only in rail, wordmark fades in on expand */
 .frost-brand {
   padding: 10px 8px;
   margin-bottom: 8px;
@@ -2792,7 +2792,7 @@ textarea {
   filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
 }
 
-/* ─── Frost Brand ─────────────────────────────────────────── */
+/* ─── Zion Brand ─────────────────────────────────────────── */
 
 .frost-brand {
   display: flex;
@@ -2808,14 +2808,25 @@ textarea {
 .frost-brand:hover { background: var(--glass); }
 
 .frost-snowflake {
-  font-size: 1.5rem;
-  line-height: 1;
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.7));
-  animation: snowSpin 8s linear infinite;
+  display: block;
+  width: 1.7rem;
+  height: 1.7rem;
+  flex-shrink: 0;
+  object-fit: contain;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.75))
+          drop-shadow(0 0 14px rgba(255, 255, 255, 0.3));
+  animation: flowerGlow 4s ease-in-out infinite;
 }
 
-@keyframes snowSpin {
-  to { transform: rotate(360deg); }
+@keyframes flowerGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 5px rgba(255,255,255,0.55))
+            drop-shadow(0 0 12px rgba(255,255,255,0.22));
+  }
+  50% {
+    filter: drop-shadow(0 0 9px rgba(255,255,255,0.90))
+            drop-shadow(0 0 22px rgba(255,255,255,0.40));
+  }
 }
 
 .frost-wordmark {
@@ -3235,7 +3246,7 @@ textarea {
   border-bottom-color: rgba(255,255,255,0.14);
 }
 
-/* Compact Frost brand inside the search bar */
+/* Compact Zion brand inside the search bar */
 .hub-bar-brand {
   display: flex;
   align-items: center;
@@ -3245,9 +3256,12 @@ textarea {
 }
 
 .hub-bar-snowflake {
-  font-size: 1.05rem;
-  line-height: 1;
-  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.55));
+  display: block;
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+  object-fit: contain;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.65));
 }
 
 .hub-bar-wordmark {

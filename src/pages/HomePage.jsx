@@ -17,6 +17,7 @@ import { useArtworkPalette }   from '../hooks/useArtworkPalette'
 import { SongImage }           from '../components/shared/SongImage'
 import { SongActionsMenu }     from '../components/shared/SongActionsMenu'
 import { DynamicBackground }   from '../components/shared/DynamicBackground'
+import { ChrysanthemumIcon }   from '../components/shared/ChrysanthemumIcon'
 
 
 function getGreeting() {
@@ -64,8 +65,8 @@ export function HomePage() {
       {/* ═══════════════════════════ SEARCH BAR ═════════════════ */}
       <div className="hub-search-bar glass">
         <span className="hub-bar-brand" aria-hidden>
-          <span className="hub-bar-snowflake">❄</span>
-          <span className="hub-bar-wordmark">Frost</span>
+          <ChrysanthemumIcon size={14} className="hub-bar-snowflake" />
+          <span className="hub-bar-wordmark">Zion</span>
         </span>
         <span className="hub-bar-sep" aria-hidden />
         <Search size={17} className="hub-search-icon" aria-hidden />

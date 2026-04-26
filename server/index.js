@@ -316,6 +316,6 @@ app.use(express.static(dist))
 app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')))
 
 app.listen(PORT, () => {
-  console.log(`🎵  Frost API  →  http://localhost:${PORT}`)
+  console.log(`🎵  Zion API  →  http://localhost:${PORT}`)
   console.log(`     YouTube key: ${YT_KEY ? '✓ loaded' : '✗ MISSING — set YOUTUBE_API_KEY'}`)
 })
