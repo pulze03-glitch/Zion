@@ -17,9 +17,11 @@ export function HiddenYouTubePlayer() {
     nextTrack,
     prevTrack,
   } = usePlayer()
+  const containerRef = useRef(null)
 
   const { isBootstrapped, loadVideo, play, pause, seekTo, setVolume } =
     useYouTubePlayer({
+      containerRef,
       onReady: onPlayerReady,
       onPlaying,
       onPaused,
@@ -72,5 +74,9 @@ export function HiddenYouTubePlayer() {
     }
   }, [isBootstrapped])
 
-  return null
+  return (
+    <div className="youtube-container" aria-hidden="true">
+      <div ref={containerRef} />
+    </div>
+  )
 }
