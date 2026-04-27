@@ -6,7 +6,7 @@ export function SettingsProvider({ children }) {
     () => localStorage.getItem(AI_LS_KEY) ?? '',
   )
   const [season, setSeasonState] = useState(
-    () => localStorage.getItem(SEASON_LS_KEY) ?? 'winter',
+    () => localStorage.getItem(SEASON_LS_KEY) ?? 'off',
   )
   const [liveBg, setLiveBgState] = useState(
     () => localStorage.getItem(LIVE_BG_LS_KEY) !== 'false',
@@ -16,6 +16,12 @@ export function SettingsProvider({ children }) {
   // Clear any old YouTube key that was stored client-side — no longer needed
   useEffect(() => {
     localStorage.removeItem('liena-yt-key')
+    // One-time migration: reset season to off for all existing users
+    if (!localStorage.getItem('zion-season-reset-v1')) {
+      localStorage.setItem(SEASON_LS_KEY, 'off')
+      setSeasonState('off')
+      localStorage.setItem('zion-season-reset-v1', '1')
+    }
   }, [])
 
   const setAiApiKey = useCallback((key) => {

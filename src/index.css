@@ -3226,6 +3226,34 @@ textarea {
   max-width: 100%;
 }
 
+/* Hero logo on home page */
+.home-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2.5rem 1rem 1.25rem;
+  gap: 0.6rem;
+}
+
+.home-hero-logo {
+  width: 7rem;
+  height: 7rem;
+  object-fit: contain;
+  filter:
+    drop-shadow(0 0 14px rgba(200, 140, 255, 0.90))
+    drop-shadow(0 0 36px rgba(155, 90, 240, 0.55));
+  animation: flowerGlow 4s ease-in-out infinite;
+}
+
+.home-hero-wordmark {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #D4AAFF;
+  text-shadow: 0 0 18px rgba(180, 110, 255, 0.6);
+}
+
 /* Search bar — sticky, always on top */
 .hub-search-bar {
   position: sticky;
@@ -5649,4 +5677,10 @@ textarea {
     width: 34px;
     height: 34px;
   }
+}
+
+@media (max-width: 767px) {
+  .home-hero { padding: 1.75rem 1rem 1rem; }
+  .home-hero-logo { width: 5rem; height: 5rem; }
+  .home-hero-wordmark { font-size: 1.4rem; }
 }

@@ -62,6 +62,14 @@ export function HomePage() {
       {/* Album-art ambient background — toggled in Settings */}
       {liveBg && <DynamicBackground palette={palette} fixed bright />}
 
+      {/* ═══════════════════════════ HERO LOGO ══════════════════ */}
+      {!hasQuery && (
+        <div className="home-hero">
+          <ChrysanthemumIcon size={112} className="home-hero-logo" />
+          <span className="home-hero-wordmark">Zion</span>
+        </div>
+      )}
+
       {/* ═══════════════════════════ SEARCH BAR ═════════════════ */}
       <div className="hub-search-bar glass">
         <span className="hub-bar-brand" aria-hidden>

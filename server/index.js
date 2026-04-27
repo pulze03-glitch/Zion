@@ -6,13 +6,27 @@ import rateLimit from 'express-rate-limit'
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 import path from 'path'
+import fs from 'fs'
 
 dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env') })
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[error] Unhandled promise rejection:', reason)
+})
+
+process.on('uncaughtException', (err) => {
+  console.error('[error] Uncaught exception:', err)
+  process.exit(1)
+})
 
 const app  = express()
 const PORT = process.env.PORT || 3001
 const YT_KEY  = process.env.YOUTUBE_API_KEY
 const YT_BASE = 'https://www.googleapis.com/youtube/v3'
+
+if (!YT_KEY) {
+  console.warn('[warn] YOUTUBE_API_KEY is not set. Routes that call YouTube will return 503 until the key is configured.')
+}
 
 /* ── Simple in-memory cache ───────────────────────────────── */
 const _cache = new Map()
@@ -312,10 +326,19 @@ app.post('/api/playlist', async (req, res) => {
 /* ── Serve built frontend in production ───────────────────── */
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dist = path.resolve(__dirname, '..', 'dist')
-app.use(express.static(dist))
-app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')))
+const distIndex = path.join(dist, 'index.html')
+const distExists = fs.existsSync(distIndex)
+
+if (distExists) {
+  app.use(express.static(dist))
+  app.get('*', (_req, res) => res.sendFile(distIndex))
+} else {
+  console.warn('[warn] dist/index.html not found — frontend static serving is disabled. Run "npm run build" first.')
+  app.get('/', (req, res) => res.json({ ok: true, note: 'API server is running. Frontend not built.' }))
+}
 
 app.listen(PORT, () => {
-  console.log(`🎵  Zion API  →  http://localhost:${PORT}`)
-  console.log(`     YouTube key: ${YT_KEY ? '✓ loaded' : '✗ MISSING — set YOUTUBE_API_KEY'}`)
+  console.log(`[info] Zion API listening on port ${PORT}`)
+  console.log(`[info] YouTube key: ${YT_KEY ? 'loaded' : 'MISSING — set YOUTUBE_API_KEY env var'}`)
+  console.log(`[info] Frontend dist: ${distExists ? dist : 'NOT FOUND (run npm run build)'}`)
 })

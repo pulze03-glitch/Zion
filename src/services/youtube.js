@@ -8,7 +8,8 @@ function getRegionCode() {
   return locale && locale.length === 2 ? locale.toUpperCase() : 'US'
 }
 
-async function apiFetch(url, options = {}) {
+async function apiFetch(url, options = {}, meta = {}) {
+  const { friendlyError } = meta
   if (!navigator.onLine) {
     throw new Error('You are offline. Reconnect to search songs.')
   }
@@ -23,7 +24,18 @@ async function apiFetch(url, options = {}) {
   if (!text.trim()) throw new Error('Server returned an empty response.')
   let data
   try { data = JSON.parse(text) } catch { throw new Error('Invalid response from server.') }
-  if (!res.ok) throw new Error(data?.error || 'Request failed.')
+
+  if (!res.ok) {
+    const serverMessage = data?.error || 'Request failed.'
+    const isNotConfigured =
+      res.status === 503 &&
+      /api key/i.test(serverMessage) &&
+      /not configured/i.test(serverMessage)
+    if (friendlyError && (res.status === 503 || isNotConfigured)) {
+      throw new Error(friendlyError)
+    }
+    throw new Error(serverMessage)
+  }
   return data
 }
 
@@ -34,12 +46,17 @@ export async function searchSongs(query, options = {}) {
   return apiFetch(
     `/api/search?q=${encodeURIComponent(q)}&limit=${limit}&region=${region}`,
     { signal },
+    { friendlyError: 'Search is unavailable right now.' },
   )
 }
 
 export async function getFeaturedSongs(signal) {
   const region = getRegionCode()
-  return apiFetch(`/api/featured?region=${region}`, { signal })
+  return apiFetch(
+    `/api/featured?region=${region}`,
+    { signal },
+    { friendlyError: 'Featured songs are unavailable right now.' },
+  )
 }
 
 export async function importYouTubePlaylist(url, signal) {
@@ -48,5 +65,5 @@ export async function importYouTubePlaylist(url, signal) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url, region: getRegionCode() }),
     signal,
-  })
+  }, { friendlyError: 'Playlist import is unavailable right now.' })
 }

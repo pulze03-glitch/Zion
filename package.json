@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "concurrently -n vite,api -c cyan,yellow \"vite\" \"node --watch server/index.js\"",
-    "build": "vite build && cd server && npm install",
+    "build": "vite build && npm ci --prefix server --omit=dev",
     "start": "node server/index.js",
     "lint": "eslint .",
     "preview": "vite preview"
