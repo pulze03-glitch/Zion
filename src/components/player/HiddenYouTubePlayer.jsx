@@ -17,11 +17,9 @@ export function HiddenYouTubePlayer() {
     nextTrack,
     prevTrack,
   } = usePlayer()
-  const containerRef = useRef(null)
 
   const { isBootstrapped, loadVideo, play, pause, seekTo, setVolume } =
     useYouTubePlayer({
-      containerRef,
       onReady: onPlayerReady,
       onPlaying,
       onPaused,
@@ -33,23 +31,8 @@ export function HiddenYouTubePlayer() {
 
   useEffect(() => {
     if (!isBootstrapped) return
-
-    setPlayerApi({
-      loadVideo,
-      play,
-      pause,
-      seekTo,
-      setVolume,
-    })
-  }, [
-    isBootstrapped,
-    loadVideo,
-    pause,
-    play,
-    seekTo,
-    setVolume,
-    setPlayerApi,
-  ])
+    setPlayerApi({ loadVideo, play, pause, seekTo, setVolume })
+  }, [isBootstrapped, loadVideo, pause, play, seekTo, setVolume, setPlayerApi])
 
   // Keep a stable ref so MediaSession handlers never go stale
   const msRef = useRef({ nextTrack, prevTrack, play, pause })
@@ -89,9 +72,5 @@ export function HiddenYouTubePlayer() {
     }
   }, [isBootstrapped])
 
-  return (
-    <div className="youtube-container" aria-hidden="true">
-      <div ref={containerRef} />
-    </div>
-  )
+  return null
 }
