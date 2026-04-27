@@ -8,10 +8,6 @@ import { fileURLToPath } from 'url'
 import path from 'path'
 import fs from 'fs'
 import { Readable } from 'stream'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
-
-const execFileAsync = promisify(execFile)
 
 dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env') })
 
@@ -328,31 +324,46 @@ app.post('/api/playlist', async (req, res) => {
   }
 })
 
-// Use yt-dlp (installed via nixpacks.toml) to resolve the audio-only stream URL.
-// yt-dlp is far more reliable than ytdl-core on server IPs — it stays current with
-// YouTube's bot-detection mitigations. We prefer m4a (AAC) because iOS Safari
-// cannot play audio/webm (Opus). The resolved CDN URL is cached for 4 hours;
-// we then proxy the stream so iOS gets proper range-request support.
+// Resolve audio-only stream URL via Piped (open-source YouTube proxy).
+// Piped runs their own extraction infrastructure so Railway's datacenter IPs
+// are not an issue. We prefer M4A (AAC) because iOS Safari can't play WebM/Opus.
+const PIPED_INSTANCES = [
+  'https://pipedapi.kavin.rocks',
+  'https://api.piped.projectsegfau.lt',
+  'https://piped-api.garudalinux.org',
+]
+
 async function resolveAudioUrl(videoId) {
   const cached = cacheGet(`yturl:${videoId}`)
   if (cached) return cached
 
-  // android player client bypasses IP-based bot detection that blocks the web client
-  // on datacenter IPs (Railway, Render, etc.). m4a/AAC required for iOS Safari.
-  const { stdout } = await execFileAsync('yt-dlp', [
-    '--get-url',
-    '--no-warnings',
-    '--no-playlist',
-    '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio',
-    '--extractor-args', 'youtube:player_client=android',
-    `https://www.youtube.com/watch?v=${videoId}`,
-  ], { timeout: 30_000 })
+  for (const base of PIPED_INSTANCES) {
+    try {
+      const res = await fetch(`${base}/streams/${videoId}`, {
+        signal: AbortSignal.timeout(8_000),
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ZionPlayer/1.0)' },
+      })
+      if (!res.ok) continue
 
-  const url = stdout.trim().split('\n')[0] // take first URL if multiple lines
-  if (!url) throw new Error('yt-dlp returned empty URL')
+      const data = await res.json()
+      const streams = (data.audioStreams ?? []).filter(s => s.url)
+        .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))
 
-  cacheSet(`yturl:${videoId}`, url, 4 * 60 * 60_000) // 4 h (CDN URLs valid ~6 h)
-  return url
+      // Prefer M4A/AAC — required for iOS Safari (WebM/Opus is unsupported)
+      const m4a = streams.find(s =>
+        s.mimeType?.includes('audio/mp4') ||
+        s.format === 'M4A' ||
+        s.codec?.includes('mp4a'),
+      )
+      const best = m4a ?? streams[0]
+      if (!best?.url) continue
+
+      cacheSet(`yturl:${videoId}`, best.url, 60 * 60_000) // 1 h
+      return best.url
+    } catch (_) {}
+  }
+
+  throw new Error('All Piped instances unavailable')
 }
 
 app.get('/api/audio/:videoId', async (req, res) => {

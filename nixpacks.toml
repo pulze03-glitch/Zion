@@ -1,2 +1,1 @@
-[phases.setup]
-nixPkgs = ["yt-dlp"]
+# No system packages needed — audio extraction handled via Piped API (HTTP)

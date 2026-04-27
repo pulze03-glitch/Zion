@@ -3262,22 +3262,24 @@ textarea {
 
 /* Search bar — sticky, always on top */
 .hub-search-bar {
-  position: sticky;
-  top: 0;
-  z-index: 40;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 18px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
   background: rgba(0,0,0,0.55);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  transition: border-color 200ms ease;
+  border-radius: 50px;
+  border: 1px solid rgba(255,255,255,0.12);
+  max-width: 600px;
+  width: calc(100% - 40px);
+  margin: 0.5rem auto 1rem;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
 }
 
 .hub-search-bar:focus-within {
-  border-bottom-color: rgba(255,255,255,0.14);
+  border-color: rgba(200,140,255,0.45);
+  box-shadow: 0 0 0 3px rgba(180,100,255,0.12);
 }
 
 /* Compact Zion brand inside the search bar */
