@@ -7,6 +7,7 @@ import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import fs from 'fs'
+import { Readable } from 'stream'
 import ytdl from '@distube/ytdl-core'
 
 dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env') })
@@ -324,24 +325,81 @@ app.post('/api/playlist', async (req, res) => {
   }
 })
 
-// Resolve and redirect to an audio-only YouTube CDN URL.
-// The native <audio> element follows the 302 redirect and handles range requests
-// directly with the CDN, enabling background playback on iOS.
+// Resolve the audio-only YouTube CDN URL and proxy it through the server.
+// Proxying (rather than redirecting) is required for iOS Safari, which needs
+// proper range-request support and rejects cross-origin audio/mp4 redirects.
+// We explicitly prefer audio/mp4 (AAC) because iOS cannot play audio/webm (Opus).
+async function resolveAudioFormat(videoId) {
+  const cached = cacheGet(`afmt:${videoId}`)
+  if (cached) return cached
+
+  const info = await ytdl.getInfo(videoId)
+
+  // audio/mp4 (AAC) plays everywhere including iOS Safari.
+  // ytdl's default "highestaudio" often returns audio/webm which iOS cannot play.
+  let format
+  try {
+    format = ytdl.chooseFormat(info.formats, {
+      quality: 'highestaudio',
+      filter: f => f.hasAudio && !f.hasVideo && !!f.mimeType?.includes('audio/mp4'),
+    })
+  } catch {
+    // No mp4 audio found — fall back to whatever is available
+    format = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' })
+  }
+
+  const result = {
+    url:           format.url,
+    mimeType:      format.mimeType?.split(';')[0] ?? 'audio/mp4',
+    contentLength: parseInt(format.contentLength, 10) || 0,
+  }
+  cacheSet(`afmt:${videoId}`, result, 4 * 60 * 60_000) // 4 h (URLs expire in ~6 h)
+  return result
+}
+
 app.get('/api/audio/:videoId', async (req, res) => {
   const { videoId } = req.params
   if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
     return res.status(400).json({ error: 'Invalid video ID' })
   }
-  const cacheKey = `audio:${videoId}`
-  const hit = cacheGet(cacheKey)
-  if (hit) return res.redirect(302, hit)
+
+  let fmt
   try {
-    const info = await ytdl.getInfo(videoId)
-    const format = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' })
-    cacheSet(cacheKey, format.url, 4 * 60 * 60_000) // 4 h (URLs expire in ~6 h)
-    res.redirect(302, format.url)
+    fmt = await resolveAudioFormat(videoId)
   } catch (err) {
-    res.status(503).json({ error: 'Audio unavailable for this track.' })
+    console.error('[audio] ytdl error:', err?.message)
+    return res.status(503).json({ error: 'Audio unavailable for this track.' })
+  }
+
+  try {
+    const upHeaders = {}
+    if (req.headers.range) upHeaders['Range'] = req.headers.range
+
+    const upstream = await fetch(fmt.url, {
+      headers: upHeaders,
+      signal: AbortSignal.timeout(20_000),
+    })
+
+    // Expired CDN URL — bust the cache so the next request re-resolves
+    if (upstream.status === 403 || upstream.status === 410) {
+      _cache.delete(`afmt:${videoId}`)
+      return res.status(503).json({ error: 'Audio stream expired, retry the track.' })
+    }
+
+    res.status(upstream.status)
+    res.setHeader('Content-Type', fmt.mimeType)
+    res.setHeader('Accept-Ranges', 'bytes')
+
+    const cl = upstream.headers.get('content-length')
+    const cr = upstream.headers.get('content-range')
+    if (cl) res.setHeader('Content-Length', cl)
+    if (cr) res.setHeader('Content-Range', cr)
+
+    req.on('close', () => { try { upstream.body.cancel() } catch (_) {} })
+    Readable.fromWeb(upstream.body).pipe(res)
+  } catch (err) {
+    console.error('[audio] proxy error:', err?.message)
+    if (!res.headersSent) res.status(503).json({ error: 'Audio stream failed.' })
   }
 })
 
