@@ -54,8 +54,10 @@ export function useYouTubePlayer({
   const loadVideo = useCallback((videoId) => {
     const audio = audioRef.current
     if (!audio || !videoId) return
+    audio.pause()
     audio.src = `/api/audio/${videoId}`
     audio.volume = volumeRef.current / 100
+    audio.load()
     audio.play().catch(() => callbacksRef.current.onAutoplayBlocked?.())
   }, [])
 

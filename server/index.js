@@ -337,12 +337,14 @@ async function resolveAudioUrl(videoId) {
   const cached = cacheGet(`yturl:${videoId}`)
   if (cached) return cached
 
-  // -f preference: m4a → mp4 audio → best available audio
+  // android player client bypasses IP-based bot detection that blocks the web client
+  // on datacenter IPs (Railway, Render, etc.). m4a/AAC required for iOS Safari.
   const { stdout } = await execFileAsync('yt-dlp', [
     '--get-url',
     '--no-warnings',
     '--no-playlist',
     '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio',
+    '--extractor-args', 'youtube:player_client=android',
     `https://www.youtube.com/watch?v=${videoId}`,
   ], { timeout: 30_000 })
 
