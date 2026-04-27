@@ -8,7 +8,10 @@ import { fileURLToPath } from 'url'
 import path from 'path'
 import fs from 'fs'
 import { Readable } from 'stream'
-import ytdl from '@distube/ytdl-core'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
+
+const execFileAsync = promisify(execFile)
 
 dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env') })
 
@@ -325,36 +328,29 @@ app.post('/api/playlist', async (req, res) => {
   }
 })
 
-// Resolve the audio-only YouTube CDN URL and proxy it through the server.
-// Proxying (rather than redirecting) is required for iOS Safari, which needs
-// proper range-request support and rejects cross-origin audio/mp4 redirects.
-// We explicitly prefer audio/mp4 (AAC) because iOS cannot play audio/webm (Opus).
-async function resolveAudioFormat(videoId) {
-  const cached = cacheGet(`afmt:${videoId}`)
+// Use yt-dlp (installed via nixpacks.toml) to resolve the audio-only stream URL.
+// yt-dlp is far more reliable than ytdl-core on server IPs — it stays current with
+// YouTube's bot-detection mitigations. We prefer m4a (AAC) because iOS Safari
+// cannot play audio/webm (Opus). The resolved CDN URL is cached for 4 hours;
+// we then proxy the stream so iOS gets proper range-request support.
+async function resolveAudioUrl(videoId) {
+  const cached = cacheGet(`yturl:${videoId}`)
   if (cached) return cached
 
-  const info = await ytdl.getInfo(videoId)
+  // -f preference: m4a → mp4 audio → best available audio
+  const { stdout } = await execFileAsync('yt-dlp', [
+    '--get-url',
+    '--no-warnings',
+    '--no-playlist',
+    '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio',
+    `https://www.youtube.com/watch?v=${videoId}`,
+  ], { timeout: 30_000 })
 
-  // audio/mp4 (AAC) plays everywhere including iOS Safari.
-  // ytdl's default "highestaudio" often returns audio/webm which iOS cannot play.
-  let format
-  try {
-    format = ytdl.chooseFormat(info.formats, {
-      quality: 'highestaudio',
-      filter: f => f.hasAudio && !f.hasVideo && !!f.mimeType?.includes('audio/mp4'),
-    })
-  } catch {
-    // No mp4 audio found — fall back to whatever is available
-    format = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' })
-  }
+  const url = stdout.trim().split('\n')[0] // take first URL if multiple lines
+  if (!url) throw new Error('yt-dlp returned empty URL')
 
-  const result = {
-    url:           format.url,
-    mimeType:      format.mimeType?.split(';')[0] ?? 'audio/mp4',
-    contentLength: parseInt(format.contentLength, 10) || 0,
-  }
-  cacheSet(`afmt:${videoId}`, result, 4 * 60 * 60_000) // 4 h (URLs expire in ~6 h)
-  return result
+  cacheSet(`yturl:${videoId}`, url, 4 * 60 * 60_000) // 4 h (CDN URLs valid ~6 h)
+  return url
 }
 
 app.get('/api/audio/:videoId', async (req, res) => {
@@ -363,11 +359,11 @@ app.get('/api/audio/:videoId', async (req, res) => {
     return res.status(400).json({ error: 'Invalid video ID' })
   }
 
-  let fmt
+  let audioUrl
   try {
-    fmt = await resolveAudioFormat(videoId)
+    audioUrl = await resolveAudioUrl(videoId)
   } catch (err) {
-    console.error('[audio] ytdl error:', err?.message)
+    console.error('[audio] yt-dlp error:', err?.message)
     return res.status(503).json({ error: 'Audio unavailable for this track.' })
   }
 
@@ -375,28 +371,43 @@ app.get('/api/audio/:videoId', async (req, res) => {
     const upHeaders = {}
     if (req.headers.range) upHeaders['Range'] = req.headers.range
 
-    const upstream = await fetch(fmt.url, {
+    const upstream = await fetch(audioUrl, {
       headers: upHeaders,
       signal: AbortSignal.timeout(20_000),
     })
 
-    // Expired CDN URL — bust the cache so the next request re-resolves
+    // Expired CDN URL — bust cache so next request re-resolves via yt-dlp
     if (upstream.status === 403 || upstream.status === 410) {
-      _cache.delete(`afmt:${videoId}`)
+      _cache.delete(`yturl:${videoId}`)
       return res.status(503).json({ error: 'Audio stream expired, retry the track.' })
     }
 
+    if ((!upstream.ok && upstream.status !== 206) || !upstream.body) {
+      console.error('[audio] upstream error:', upstream.status)
+      return res.status(503).json({ error: 'Audio stream unavailable.' })
+    }
+
     res.status(upstream.status)
-    res.setHeader('Content-Type', fmt.mimeType)
     res.setHeader('Accept-Ranges', 'bytes')
 
+    const ct = upstream.headers.get('content-type')
     const cl = upstream.headers.get('content-length')
     const cr = upstream.headers.get('content-range')
+    if (ct) res.setHeader('Content-Type', ct)
     if (cl) res.setHeader('Content-Length', cl)
     if (cr) res.setHeader('Content-Range', cr)
 
-    req.on('close', () => { try { upstream.body.cancel() } catch (_) {} })
-    Readable.fromWeb(upstream.body).pipe(res)
+    req.on('close', () => {
+      try { upstream.body.cancel() } catch (_) {}
+    })
+
+    Readable.fromWeb(upstream.body)
+      .on('error', (streamErr) => {
+        console.error('[audio] stream error:', streamErr?.message)
+        if (!res.headersSent) res.status(503).json({ error: 'Audio stream failed.' })
+        else res.end()
+      })
+      .pipe(res)
   } catch (err) {
     console.error('[audio] proxy error:', err?.message)
     if (!res.headersSent) res.status(503).json({ error: 'Audio stream failed.' })

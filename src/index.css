@@ -216,13 +216,15 @@ a {
     right: 16px !important;
     width: auto !important;
     transform: none !important;
+    z-index: 80 !important;
     animation: miniSlideUpMobile 0.34s cubic-bezier(0.32, 0.72, 0, 1) both !important;
   }
   .mini-player:active { transform: scale(0.99) !important; }
 
   /* FloatingNav: raise above the mini player (64px tall + 12px gap + 8px base) */
-  .fnav-btn   { bottom: 84px !important; }
-  .fnav-items { bottom: 142px !important; }
+  .fnav-btn   { bottom: 84px !important; z-index: 92 !important; }
+  .fnav-items { bottom: 142px !important; z-index: 90 !important; }
+  .fnav-backdrop { z-index: 88 !important; }
 
   /* ── Kill ALL expensive blur/filter on mobile for performance ── */
   .glass,
