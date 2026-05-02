@@ -1,26 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-// Minimal silent WAV — plays 0 frames, volume 0, to unlock the iOS audio session
-// on the first user gesture before any real track is requested.
+// Minimal silent WAV — used to unlock the iOS audio session on first user gesture.
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
 
 let _iosUnlocked = false
 
-function unlockIOSAudio(audio) {
+function unlockIOSAudio() {
   if (_iosUnlocked) return
   _iosUnlocked = true
-  const prev = audio.src
-  const prevVolume = audio.volume
-  audio.volume = 0
-  audio.src = SILENT_WAV
-  audio.play().then(() => {
-    audio.pause()
-    audio.src = prev
-    audio.volume = prevVolume
-  }).catch(() => {
-    audio.src = prev
-    audio.volume = prevVolume
-  })
+  // Use a separate throwaway element — never touch the real player element here.
+  // If we mutate the shared element's src the unlock .then() races with loadVideo
+  // and restores src="" over the real track URL, silently killing playback.
+  const tmp = new Audio(SILENT_WAV)
+  tmp.volume = 0
+  tmp.play().catch(() => {})
 }
 
 export function useNativeAudioPlayer({
@@ -70,7 +63,7 @@ export function useNativeAudioPlayer({
     // Unlock iOS audio session on the first user gesture so that subsequent
     // programmatic play() calls (including those triggered from React event
     // handlers) succeed without a NotAllowedError.
-    const unlock = () => unlockIOSAudio(audio)
+    const unlock = () => unlockIOSAudio()
     document.addEventListener('touchstart', unlock, { once: true, passive: true })
     document.addEventListener('mousedown',  unlock, { once: true, passive: true })
 
@@ -94,7 +87,8 @@ export function useNativeAudioPlayer({
     audio.pause()
     audio.src = `/api/audio/${videoId}`
     audio.volume = volumeRef.current / 100
-    audio.load()
+    // Do NOT call audio.load() — play() starts loading automatically, and calling
+    // load() before play() can break the iOS gesture chain (NotAllowedError).
     audio.play().catch((err) => {
       if (err?.name !== 'AbortError') {
         console.warn('[player] audio.play() rejected:', err?.name, err?.message)
