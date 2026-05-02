@@ -5937,3 +5937,89 @@ textarea {
   background: #1db954 !important;
   color: #000 !important;
 }
+
+/* ── Sidebar user button ────────────────────────────────────── */
+.sidebar-user-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: calc(100% - 1rem);
+  margin: auto 0.5rem 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.sidebar-user-btn:hover {
+  color: var(--text-1);
+  border-color: rgba(255,255,255,0.2);
+}
+
+.sidebar-user-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Settings auth row (unauthenticated state) ──────────────── */
+.settings-auth-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.settings-auth-label {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  margin: 0;
+}
+
+.settings-auth-btns {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.settings-auth-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.settings-auth-btn:hover {
+  color: var(--text-1);
+  border-color: rgba(255,255,255,0.25);
+}
+
+.settings-auth-btn--primary {
+  background: var(--text-1);
+  color: var(--bg-0);
+  border-color: var(--text-1);
+}
+
+.settings-auth-btn--primary:hover {
+  opacity: 0.88;
+  color: var(--bg-0);
+}

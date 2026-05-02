@@ -1,11 +1,16 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { LogIn, User } from 'lucide-react'
 import { navItems } from './navItems'
 import { getLastLibraryPath } from '../../utils/libraryHistory'
 import { ChrysanthemumIcon } from '../shared/ChrysanthemumIcon'
+import { useAuth } from '../../context/useAuth'
+import { useSettings } from '../../context/useSettings'
 
 export function Sidebar() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { user } = useAuth()
+  const { openSettings } = useSettings()
   const isLibraryActive =
     location.pathname === '/library' || location.pathname.startsWith('/playlist/')
 
@@ -51,6 +56,19 @@ export function Sidebar() {
           )
         })}
       </nav>
+
+      {/* User / Sign-in button at sidebar bottom */}
+      {user ? (
+        <button type="button" className="sidebar-user-btn" onClick={openSettings} title={user.email}>
+          <User size={16} />
+          <span className="sidebar-user-label">{user.displayName || user.email}</span>
+        </button>
+      ) : (
+        <button type="button" className="sidebar-user-btn" onClick={() => navigate('/login')}>
+          <LogIn size={16} />
+          <span className="sidebar-user-label">Sign in</span>
+        </button>
+      )}
     </aside>
   )
 }

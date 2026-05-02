@@ -16,10 +16,11 @@ import { useLibrary }      from './context/useLibrary'
 import { useAuth }         from './context/useAuth'
 import { decodePlaylist, readShareParam } from './utils/playlistShare'
 
-function RequireAuth({ children }) {
+// Redirect already-logged-in users away from /login and /signup
+function GuestOnly({ children }) {
   const { user, loading } = useAuth()
   if (loading) return <div className="auth-loading"><span className="auth-loading-dot" /></div>
-  if (!user)   return <Navigate to="/login" replace />
+  if (user)    return <Navigate to="/" replace />
   return children
 }
 
@@ -76,9 +77,9 @@ function App() {
   return (
     <>
       <Routes>
-        <Route path="/login"  element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-        <Route element={<RequireAuth><AppShell /></RequireAuth>}>
+        <Route path="/login"  element={<GuestOnly><LoginPage /></GuestOnly>} />
+        <Route path="/signup" element={<GuestOnly><SignupPage /></GuestOnly>} />
+        <Route element={<AppShell />}>
           <Route path="/"          element={<HomePage />} />
           <Route path="/search"    element={<SearchPage />} />
           <Route path="/library"   element={<LibraryPage />} />

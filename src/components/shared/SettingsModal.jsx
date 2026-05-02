@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { Eye, EyeOff, Film, LogOut, Save, Sparkles, Trash2, User, Wind, X, Palette } from 'lucide-react'
+import { Eye, EyeOff, Film, LogIn, LogOut, Save, Sparkles, Trash2, User, UserPlus, Wind, X, Palette } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useSettings } from '../../context/useSettings'
 import { useWallpaper } from '../../hooks/useWallpaper'
 import { useAuth } from '../../context/useAuth'
@@ -52,7 +53,7 @@ function SettingsModalContent({ aiApiKey, closeSettings, setAiApiKey }) {
         </div>
 
         {/* Account */}
-        {user && (
+        {user ? (
           <div className="settings-field settings-account-row">
             <div className="settings-account-info">
               <User size={14} />
@@ -61,6 +62,18 @@ function SettingsModalContent({ aiApiKey, closeSettings, setAiApiKey }) {
             <button type="button" className="settings-signout-btn" onClick={handleLogout}>
               <LogOut size={13} /> Sign out
             </button>
+          </div>
+        ) : (
+          <div className="settings-field settings-auth-row">
+            <p className="settings-auth-label">Save playlists across devices</p>
+            <div className="settings-auth-btns">
+              <Link to="/login" className="settings-auth-btn" onClick={closeSettings}>
+                <LogIn size={14} /> Sign in
+              </Link>
+              <Link to="/signup" className="settings-auth-btn settings-auth-btn--primary" onClick={closeSettings}>
+                <UserPlus size={14} /> Create account
+              </Link>
+            </div>
           </div>
         )}
 

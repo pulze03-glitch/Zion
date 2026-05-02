@@ -44,11 +44,22 @@ async function initDb() {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
-        id           SERIAL PRIMARY KEY,
-        email        TEXT UNIQUE NOT NULL,
+        id            SERIAL PRIMARY KEY,
+        email         TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
-        display_name TEXT,
-        created_at   TIMESTAMPTZ DEFAULT now()
+        display_name  TEXT,
+        created_at    TIMESTAMPTZ DEFAULT now()
+      )
+    `)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_playlists (
+        id         TEXT    NOT NULL,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name       TEXT    NOT NULL,
+        songs      JSONB   NOT NULL DEFAULT '[]',
+        created_at BIGINT  NOT NULL,
+        updated_at BIGINT  NOT NULL,
+        PRIMARY KEY (id, user_id)
       )
     `)
     console.log('[info] Database ready')
@@ -599,6 +610,73 @@ app.get('/api/audio/:videoId', async (req, res) => {
   } catch (err) {
     console.error('[audio] Proxy error:', err?.message)
     if (!res.headersSent) res.status(503).json({ error: 'Audio stream failed.' })
+  }
+})
+
+/* ── Playlist cloud sync ──────────────────────────────────── */
+
+app.get('/api/playlists', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured.' })
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, name, songs, created_at, updated_at FROM user_playlists WHERE user_id = $1 ORDER BY created_at ASC',
+      [req.user.id],
+    )
+    res.json(rows.map(r => ({
+      id: r.id, name: r.name, songs: r.songs,
+      createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+    })))
+  } catch (err) {
+    console.error('[playlists] GET error:', err.message)
+    res.status(500).json({ error: 'Could not load playlists.' })
+  }
+})
+
+app.post('/api/playlists', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured.' })
+  const { id, name, songs, createdAt } = req.body ?? {}
+  if (!id || !name) return res.status(400).json({ error: 'id and name are required.' })
+  const now = Date.now()
+  try {
+    await pool.query(
+      `INSERT INTO user_playlists (id, user_id, name, songs, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (id, user_id) DO NOTHING`,
+      [id, req.user.id, name.trim(), JSON.stringify(songs ?? []), createdAt ?? now, now],
+    )
+    res.status(201).json({ ok: true })
+  } catch (err) {
+    console.error('[playlists] POST error:', err.message)
+    res.status(500).json({ error: 'Could not save playlist.' })
+  }
+})
+
+app.put('/api/playlists/:id', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured.' })
+  const { name, songs } = req.body ?? {}
+  const now = Date.now()
+  try {
+    await pool.query(
+      `UPDATE user_playlists
+       SET name = COALESCE($1, name), songs = COALESCE($2, songs), updated_at = $3
+       WHERE id = $4 AND user_id = $5`,
+      [name ?? null, songs != null ? JSON.stringify(songs) : null, now, req.params.id, req.user.id],
+    )
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('[playlists] PUT error:', err.message)
+    res.status(500).json({ error: 'Could not update playlist.' })
+  }
+})
+
+app.delete('/api/playlists/:id', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured.' })
+  try {
+    await pool.query('DELETE FROM user_playlists WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id])
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('[playlists] DELETE error:', err.message)
+    res.status(500).json({ error: 'Could not delete playlist.' })
   }
 })
 
