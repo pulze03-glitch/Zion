@@ -49,17 +49,28 @@ export default defineConfig({
       workbox: {
         runtimeCaching: [
           {
+            // HTML and JS always fetched from network so deployments take
+            // effect immediately without requiring a second refresh.
             urlPattern: ({ request }) =>
               request.destination === 'document' ||
-              request.destination === 'script' ||
+              request.destination === 'script',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'app-code',
+              networkTimeoutSeconds: 5,
+            },
+          },
+          {
+            // Fonts, styles and images can be served stale — they change rarely.
+            urlPattern: ({ request }) =>
               request.destination === 'style' ||
               request.destination === 'font' ||
               request.destination === 'image',
             handler: 'StaleWhileRevalidate',
             options: {
-              cacheName: 'app-shell-assets',
+              cacheName: 'app-static',
               expiration: {
-                maxEntries: 120,
+                maxEntries: 80,
                 maxAgeSeconds: 60 * 60 * 24 * 30,
               },
             },
