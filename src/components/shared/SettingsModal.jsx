@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
-import { Eye, EyeOff, Film, Save, Sparkles, Trash2, Wind, X, Palette } from 'lucide-react'
+import { Eye, EyeOff, Film, LogOut, Save, Sparkles, Trash2, User, Wind, X, Palette } from 'lucide-react'
 import { useSettings } from '../../context/useSettings'
 import { useWallpaper } from '../../hooks/useWallpaper'
+import { useAuth } from '../../context/useAuth'
 
 const SEASON_OPTIONS = [
   { value: 'off',    label: 'Off',    emoji: '✕' },
@@ -17,7 +18,13 @@ function SettingsModalContent({ aiApiKey, closeSettings, setAiApiKey }) {
   const [saved,   setSaved]   = useState(false)
   const { blobUrl, setWallpaper, clearWallpaper } = useWallpaper()
   const { season, setSeason, liveBg, setLiveBg } = useSettings()
+  const { user, logout } = useAuth()
   const fileRef = useRef(null)
+
+  const handleLogout = () => {
+    logout()
+    closeSettings()
+  }
 
   const handleSave = () => {
     setAiApiKey(aiDraft)
@@ -43,6 +50,19 @@ function SettingsModalContent({ aiApiKey, closeSettings, setAiApiKey }) {
             <X size={18} />
           </button>
         </div>
+
+        {/* Account */}
+        {user && (
+          <div className="settings-field settings-account-row">
+            <div className="settings-account-info">
+              <User size={14} />
+              <span className="settings-account-email">{user.displayName || user.email}</span>
+            </div>
+            <button type="button" className="settings-signout-btn" onClick={handleLogout}>
+              <LogOut size={13} /> Sign out
+            </button>
+          </div>
+        )}
 
         {/* AI DJ key */}
         <div className="settings-field">
