@@ -11,8 +11,11 @@ import { Sidebar } from './Sidebar'
 import { HiddenYouTubePlayer } from '../player/HiddenYouTubePlayer'
 import { HiddenAudioPlayer }   from '../player/HiddenAudioPlayer'
 
-// iOS WebKit pauses <video> in the background — use native <audio> for background playback.
-// Every browser on iPhone/iPad uses WebKit, so we detect iOS here once.
+// iOS WebKit suspends <video> (and therefore the YouTube iframe) when the screen
+// locks or the app is backgrounded.  It also blocks cross-origin iframe autoplay
+// triggered from the parent page, so the play button is unreliable on iOS.
+// Use an HTML5 <audio> element for iOS so that background playback works and
+// user-gesture play() calls succeed without crossing the iframe boundary.
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 import { NowPlayingView } from '../player/NowPlayingView'

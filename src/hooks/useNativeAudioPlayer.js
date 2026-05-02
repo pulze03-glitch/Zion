@@ -1,5 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+// Minimal silent WAV — plays 0 frames, volume 0, to unlock the iOS audio session
+// on the first user gesture before any real track is requested.
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
+
+let _iosUnlocked = false
+
+function unlockIOSAudio(audio) {
+  if (_iosUnlocked) return
+  _iosUnlocked = true
+  const prev = audio.src
+  const prevVolume = audio.volume
+  audio.volume = 0
+  audio.src = SILENT_WAV
+  audio.play().then(() => {
+    audio.pause()
+    audio.src = prev
+    audio.volume = prevVolume
+  }).catch(() => {
+    audio.src = prev
+    audio.volume = prevVolume
+  })
+}
+
 export function useNativeAudioPlayer({
   onReady, onPlaying, onPaused, onEnded,
   onTimeUpdate, onDurationUpdate, onError,
@@ -8,6 +31,7 @@ export function useNativeAudioPlayer({
   const callbacksRef = useRef({})
   const pollRef      = useRef(null)
   const volumeRef    = useRef(80)
+  const lastDurRef   = useRef(0)
   const [isBootstrapped, setIsBootstrapped] = useState(false)
 
   useEffect(() => {
@@ -17,15 +41,25 @@ export function useNativeAudioPlayer({
   useEffect(() => {
     const audio = new Audio()
     audio.preload = 'none'
+    // Attach to DOM — iOS WebKit requires a DOM-attached <audio> element for reliable
+    // background (screen-locked) playback. A detached Audio() object gets suspended.
+    audio.style.display = 'none'
+    document.body.appendChild(audio)
     audioRef.current = audio
 
     const stopPoll = () => { clearInterval(pollRef.current); pollRef.current = null }
     const startPoll = () => {
       stopPoll()
+      // 500ms interval for smoother progress bar; duration only dispatched on change
       pollRef.current = setInterval(() => {
-        callbacksRef.current.onTimeUpdate?.(audio.currentTime || 0)
-        callbacksRef.current.onDurationUpdate?.(isFinite(audio.duration) ? audio.duration : 0)
-      }, 1000)
+        const t = audio.currentTime || 0
+        const d = isFinite(audio.duration) ? audio.duration : 0
+        callbacksRef.current.onTimeUpdate?.(t)
+        if (d > 0 && d !== lastDurRef.current) {
+          lastDurRef.current = d
+          callbacksRef.current.onDurationUpdate?.(d)
+        }
+      }, 500)
     }
 
     audio.addEventListener('playing', () => { callbacksRef.current.onPlaying?.(); startPoll() })
@@ -33,23 +67,48 @@ export function useNativeAudioPlayer({
     audio.addEventListener('ended',   () => { stopPoll(); callbacksRef.current.onEnded?.() })
     audio.addEventListener('error',   () => { stopPoll(); callbacksRef.current.onError?.({ data: audio.error?.code ?? 0 }) })
 
+    // Unlock iOS audio session on the first user gesture so that subsequent
+    // programmatic play() calls (including those triggered from React event
+    // handlers) succeed without a NotAllowedError.
+    const unlock = () => unlockIOSAudio(audio)
+    document.addEventListener('touchstart', unlock, { once: true, passive: true })
+    document.addEventListener('mousedown',  unlock, { once: true, passive: true })
+
     setIsBootstrapped(true)
     callbacksRef.current.onReady?.()
 
-    return () => { stopPoll(); audio.pause(); audio.src = '' }
+    return () => {
+      stopPoll()
+      document.removeEventListener('touchstart', unlock)
+      document.removeEventListener('mousedown',  unlock)
+      audio.pause()
+      audio.src = ''
+      if (document.body.contains(audio)) document.body.removeChild(audio)
+    }
   }, [])
 
   const loadVideo = useCallback((videoId) => {
     const audio = audioRef.current
     if (!audio || !videoId) return
+    lastDurRef.current = 0  // reset so duration dispatch fires for the new track
     audio.pause()
     audio.src = `/api/audio/${videoId}`
     audio.volume = volumeRef.current / 100
     audio.load()
-    audio.play().catch(() => {})
+    audio.play().catch((err) => {
+      if (err?.name !== 'AbortError') {
+        console.warn('[player] audio.play() rejected:', err?.name, err?.message)
+      }
+    })
   }, [])
 
-  const play    = useCallback(() => { audioRef.current?.play().catch(() => {}) }, [])
+  const play    = useCallback(() => {
+    audioRef.current?.play().catch((err) => {
+      if (err?.name !== 'AbortError') {
+        console.warn('[player] play() rejected:', err?.name, err?.message)
+      }
+    })
+  }, [])
   const pause   = useCallback(() => { audioRef.current?.pause() }, [])
   const seekTo  = useCallback((s) => {
     if (audioRef.current && Number.isFinite(s)) audioRef.current.currentTime = s

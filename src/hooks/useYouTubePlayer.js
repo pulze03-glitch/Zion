@@ -4,6 +4,7 @@ const YT_STATES = {
   ENDED: 0,
   PLAYING: 1,
   PAUSED: 2,
+  BUFFERING: 3,
 }
 
 let scriptPromise
@@ -96,23 +97,32 @@ export function useYouTubePlayer({
     }
   }, [])
 
-  const lastTimeRef = useRef(-1)
+  const lastTimeRef     = useRef(-1)
+  const lastDurationRef = useRef(0)
 
   const startPolling = useCallback(() => {
     stopPolling()
+    // Poll at 500ms so the progress bar moves smoothly (0.5-second steps vs 1-second jumps)
     pollRef.current = setInterval(() => {
       const player = playerRef.current
       if (!player?.getCurrentTime || !player?.getDuration) return
 
       const time = player.getCurrentTime() || 0
-      const duration = player.getDuration() || 0
+      const dur  = player.getDuration() || 0
 
-      if (Math.abs(time - lastTimeRef.current) >= 0.9) {
+      // Only dispatch time when it moves by at least 0.4s (two poll ticks)
+      if (Math.abs(time - lastTimeRef.current) >= 0.4) {
         lastTimeRef.current = time
         callbacksRef.current.onTimeUpdate?.(time)
-        callbacksRef.current.onDurationUpdate?.(duration)
       }
-    }, 1000)
+
+      // Only dispatch duration when it first becomes known or changes — never every tick.
+      // Duration dispatches are the biggest source of redundant context re-renders.
+      if (dur > 0 && dur !== lastDurationRef.current) {
+        lastDurationRef.current = dur
+        callbacksRef.current.onDurationUpdate?.(dur)
+      }
+    }, 500)
   }, [stopPolling])
 
   useEffect(() => {
@@ -157,6 +167,16 @@ export function useYouTubePlayer({
                 }
                 callbacksRef.current.onPlaying?.()
                 startPolling()
+              } else if (event.data === YT_STATES.BUFFERING) {
+                // YouTube is rebuffering mid-playback — keep polling so the progress
+                // bar continues and don't dispatch onPaused (the video will resume on
+                // its own).  If mutedForAutoplay is still set, retry play once.
+                if (mutedForAutoplayRef.current && autoplayRetryRef.current < 1) {
+                  autoplayRetryRef.current += 1
+                  setTimeout(() => {
+                    if (mutedForAutoplayRef.current) playerRef.current?.playVideo?.()
+                  }, 200)
+                }
               } else if (event.data === YT_STATES.PAUSED) {
                 if (mutedForAutoplayRef.current && autoplayRetryRef.current < 1) {
                   autoplayRetryRef.current += 1
@@ -201,7 +221,8 @@ export function useYouTubePlayer({
 
   const loadVideo = useCallback((videoId) => {
     if (!playerRef.current || !videoId) return
-    lastTimeRef.current = -1
+    lastTimeRef.current     = -1
+    lastDurationRef.current = 0
     autoplayRetryRef.current = 0
     mutedForAutoplayRef.current = true
     try { playerRef.current.mute() } catch (_) {}

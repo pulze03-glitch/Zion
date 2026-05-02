@@ -185,7 +185,7 @@ async function filterEmbeddable(videoIds, region) {
 
 /* ── Routes ───────────────────────────────────────────────── */
 
-app.get('/api/health', (req, res) => res.json({ ok: true }))
+app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
 // Search songs
 app.get('/api/search', async (req, res) => {
@@ -230,53 +230,26 @@ function isShorts(item) {
   return title.includes('#shorts') || title.includes(' shorts')
 }
 
-// Featured — music videos only (no Shorts, no non-music content)
-const FEATURED_QUERIES = [
-  'official music video 2024',
-  'new song 2024 official audio',
-  'top music 2024 official video',
-  'best songs 2024 official',
-  'hit songs 2024 music video',
-]
+// Featured — YouTube Music trending chart only (mostPopular, music category)
 app.get('/api/featured', async (req, res) => {
   const region = normalizeRegion(req.query.region)
-  const slot   = Math.floor(Date.now() / (10 * 60_000)) % FEATURED_QUERIES.length
-  const key    = `featured:${region}:${slot}`
+  const key    = `featured:${region}`
   const hit    = cacheGet(key)
   if (hit) return res.json(hit)
 
   try {
-    let songs
-    if (slot === 0) {
-      // YouTube Music trending chart — fetch contentDetails so parseDuration can filter Shorts
-      const data = await ytFetch('videos', {
-        part: 'snippet,status,contentDetails', chart: 'mostPopular',
-        regionCode: region, videoCategoryId: '10', maxResults: '40',
-      })
-      songs = (data.items ?? [])
-        .filter((item) => isPlayableVideo(item, region, { minDuration: 60, excludeShorts: true }))
-        .map(mapVideo)
-        .filter(s => s.id)
-    } else {
-      // Music-video search — fetchMusicVideos handles duration + embeddability filtering
-      const q = FEATURED_QUERIES[slot]
-      const data = await ytFetch('search', {
-        part: 'snippet', q, type: 'video',
-        videoCategoryId: '10',
-        videoEmbeddable: 'true',
-        videoSyndicated: 'true',
-        regionCode: region,
-        maxResults: '30',
-      })
-      const ids  = (data.items ?? []).map(i => i?.id?.videoId).filter(Boolean)
-      const vids = await fetchMusicVideos(ids, region)
-      songs = vids.map(mapVideo).filter(s => s.id)
-    }
-    for (let i = songs.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [songs[i], songs[j]] = [songs[j], songs[i]]
-    }
-    cacheSet(key, songs, 10 * 60_000)
+    const data = await ytFetch('videos', {
+      part: 'snippet,status,contentDetails',
+      chart: 'mostPopular',
+      regionCode: region,
+      videoCategoryId: '10',
+      maxResults: '50',
+    })
+    const songs = (data.items ?? [])
+      .filter((item) => isPlayableVideo(item, region, { minDuration: 60, excludeShorts: true }))
+      .map(mapVideo)
+      .filter(s => s.id)
+    cacheSet(key, songs, 15 * 60_000) // 15 min
     res.json(songs)
   } catch (err) {
     res.status(err.status ?? 500).json({ error: err.message })
@@ -324,46 +297,129 @@ app.post('/api/playlist', async (req, res) => {
   }
 })
 
-// Resolve audio-only stream URL via Piped (open-source YouTube proxy).
-// Piped runs their own extraction infrastructure so Railway's datacenter IPs
-// are not an issue. We prefer M4A (AAC) because iOS Safari can't play WebM/Opus.
-const PIPED_INSTANCES = [
-  'https://pipedapi.kavin.rocks',
-  'https://api.piped.projectsegfau.lt',
-  'https://piped-api.garudalinux.org',
-]
 
-async function resolveAudioUrl(videoId) {
-  const cached = cacheGet(`yturl:${videoId}`)
-  if (cached) return cached
+/* ── Audio stream proxy (iOS native <audio> player) ──────────
+   Resolution order:
+     1. YouTube InnerTube ANDROID client  — no third-party SSL,
+        returns pre-signed CDN URLs directly from YouTube.
+     2. Piped open instances (parallel)  — fallback when InnerTube
+        is blocked or returns signatureCipher-only formats.
+   The route contract (GET /api/audio/:videoId → audio bytes with
+   Range support) is stable regardless of which method resolves.  */
 
-  for (const base of PIPED_INSTANCES) {
-    try {
+// ── InnerTube extraction ───────────────────────────────────────
+const INNERTUBE_ANDROID_VERSION = '19.09.37'
+
+function pickBestAudioUrl(formats = []) {
+  // Only use formats that already have a direct unsigned URL
+  const audio = formats
+    .filter(f => f.url && f.mimeType?.startsWith('audio/'))
+    .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))
+  // Prefer M4A/AAC — required for iOS Safari (WebM/Opus unsupported)
+  return (audio.find(f => f.mimeType?.includes('mp4')) ?? audio[0])?.url ?? null
+}
+
+async function resolveViaInnerTube(videoId) {
+  const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-YouTube-Client-Name': '3',
+      'X-YouTube-Client-Version': INNERTUBE_ANDROID_VERSION,
+      'User-Agent': `com.google.android.youtube/${INNERTUBE_ANDROID_VERSION} (Linux; U; Android 11) gzip`,
+      'Origin': 'https://www.youtube.com',
+    },
+    body: JSON.stringify({
+      videoId,
+      context: {
+        client: {
+          clientName: 'ANDROID',
+          clientVersion: INNERTUBE_ANDROID_VERSION,
+          androidSdkVersion: 30,
+          userAgent: `com.google.android.youtube/${INNERTUBE_ANDROID_VERSION} (Linux; U; Android 11) gzip`,
+          hl: 'en',
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(8_000),
+  })
+
+  if (!res.ok) throw new Error(`InnerTube HTTP ${res.status}`)
+  const data = await res.json()
+
+  const status = data?.playabilityStatus?.status
+  if (status !== 'OK') {
+    throw new Error(`Not playable: ${data?.playabilityStatus?.reason ?? status}`)
+  }
+
+  const url = pickBestAudioUrl(data?.streamingData?.adaptiveFormats)
+  if (!url) throw new Error('InnerTube: no direct audio URL in response')
+  return url
+}
+
+// ── Piped extraction (parallel across all instances) ──────────
+const PIPED_INSTANCES = (process.env.PIPED_INSTANCES ?? '')
+  .split(',').map(s => s.trim()).filter(Boolean)
+  .concat([
+    'https://pipedapi.kavin.rocks',
+    'https://api.piped.projectsegfau.lt',
+    'https://piped-api.garudalinux.org',
+  ])
+  .slice(0, 4)
+
+async function resolveViaPiped(videoId) {
+  // Race all instances — first successful response wins
+  return Promise.any(
+    PIPED_INSTANCES.map(async (base) => {
       const res = await fetch(`${base}/streams/${videoId}`, {
-        signal: AbortSignal.timeout(8_000),
+        signal: AbortSignal.timeout(7_000),
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ZionPlayer/1.0)' },
       })
-      if (!res.ok) continue
-
+      if (!res.ok) throw new Error(`${base}: HTTP ${res.status}`)
       const data = await res.json()
       const streams = (data.audioStreams ?? []).filter(s => s.url)
         .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))
-
-      // Prefer M4A/AAC — required for iOS Safari (WebM/Opus is unsupported)
       const m4a = streams.find(s =>
-        s.mimeType?.includes('audio/mp4') ||
-        s.format === 'M4A' ||
-        s.codec?.includes('mp4a'),
+        s.mimeType?.includes('audio/mp4') || s.format === 'M4A' || s.codec?.includes('mp4a'),
       )
       const best = m4a ?? streams[0]
-      if (!best?.url) continue
-
-      cacheSet(`yturl:${videoId}`, best.url, 60 * 60_000) // 1 h
+      if (!best?.url) throw new Error(`${base}: no usable stream`)
       return best.url
-    } catch (_) {}
+    }),
+  )
+}
+
+// ── Unified resolver (InnerTube → Piped) ──────────────────────
+async function getAudioStreamURL(videoId) {
+  const cached = cacheGet(`yturl:${videoId}`)
+  if (cached) return cached
+
+  let url = null
+
+  // ① InnerTube — direct YouTube API, no third-party SSL
+  try {
+    url = await resolveViaInnerTube(videoId)
+    console.log('[audio] resolved via InnerTube:', videoId)
+  } catch (err) {
+    console.warn('[audio] InnerTube failed, trying Piped:', err.message)
   }
 
-  throw new Error('All Piped instances unavailable')
+  // ② Piped — parallel race across instances
+  if (!url) {
+    try {
+      url = await resolveViaPiped(videoId)
+      console.log('[audio] resolved via Piped:', videoId)
+    } catch (err) {
+      const msg = err?.errors?.map(e => e.message).join('; ') ?? err.message
+      console.error('[audio] All sources failed for', videoId, '—', msg)
+      const e = new Error('Audio stream unavailable — all extraction sources failed.')
+      e.status = 503
+      throw e
+    }
+  }
+
+  cacheSet(`yturl:${videoId}`, url, 55 * 60_000) // CDN URLs expire in ~1 h
+  return url
 }
 
 app.get('/api/audio/:videoId', async (req, res) => {
@@ -374,10 +430,10 @@ app.get('/api/audio/:videoId', async (req, res) => {
 
   let audioUrl
   try {
-    audioUrl = await resolveAudioUrl(videoId)
+    audioUrl = await getAudioStreamURL(videoId)
   } catch (err) {
-    console.error('[audio] yt-dlp error:', err?.message)
-    return res.status(503).json({ error: 'Audio unavailable for this track.' })
+    console.error('[audio] Extraction error:', err?.message)
+    return res.status(err.status ?? 503).json({ error: 'Audio unavailable for this track.' })
   }
 
   try {
@@ -389,14 +445,14 @@ app.get('/api/audio/:videoId', async (req, res) => {
       signal: AbortSignal.timeout(20_000),
     })
 
-    // Expired CDN URL — bust cache so next request re-resolves via yt-dlp
+    // Expired CDN URL — bust cache so the next request re-resolves
     if (upstream.status === 403 || upstream.status === 410) {
       _cache.delete(`yturl:${videoId}`)
-      return res.status(503).json({ error: 'Audio stream expired, retry the track.' })
+      return res.status(503).json({ error: 'Audio stream expired — retry the track.' })
     }
 
     if ((!upstream.ok && upstream.status !== 206) || !upstream.body) {
-      console.error('[audio] upstream error:', upstream.status)
+      console.error('[audio] Upstream error:', upstream.status, videoId)
       return res.status(503).json({ error: 'Audio stream unavailable.' })
     }
 
@@ -416,13 +472,13 @@ app.get('/api/audio/:videoId', async (req, res) => {
 
     Readable.fromWeb(upstream.body)
       .on('error', (streamErr) => {
-        console.error('[audio] stream error:', streamErr?.message)
+        console.error('[audio] Stream error:', streamErr?.message)
         if (!res.headersSent) res.status(503).json({ error: 'Audio stream failed.' })
         else res.end()
       })
       .pipe(res)
   } catch (err) {
-    console.error('[audio] proxy error:', err?.message)
+    console.error('[audio] Proxy error:', err?.message)
     if (!res.headersSent) res.status(503).json({ error: 'Audio stream failed.' })
   }
 })
@@ -438,7 +494,7 @@ if (distExists) {
   app.get('*', (_req, res) => res.sendFile(distIndex))
 } else {
   console.warn('[warn] dist/index.html not found — frontend static serving is disabled. Run "npm run build" first.')
-  app.get('/', (req, res) => res.json({ ok: true, note: 'API server is running. Frontend not built.' }))
+  app.get('/', (_req, res) => res.json({ ok: true, note: 'API server is running. Frontend not built.' }))
 }
 
 app.listen(PORT, () => {

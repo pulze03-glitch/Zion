@@ -22,13 +22,7 @@ export function useFeaturedSongs() {
     getFeaturedSongs(controller.signal)
       .then((result) => {
         if (requestId !== requestIdRef.current) return
-        // Shuffle client-side so each page load feels different even with a cache hit
-        const shuffled = [...result]
-        for (let i = shuffled.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-        }
-        setSongs(shuffled)
+        setSongs(result)
       })
       .catch((err) => {
         if (err.name === 'AbortError' || requestId !== requestIdRef.current) return
