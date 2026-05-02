@@ -8,10 +8,20 @@ import { SearchPage }      from './pages/SearchPage'
 import { LibraryPage }     from './pages/LibraryPage'
 import { PlaylistDetailPage } from './pages/PlaylistDetailPage'
 import { StatsPage }          from './pages/StatsPage'
+import { LoginPage }       from './pages/LoginPage'
+import { SignupPage }      from './pages/SignupPage'
 import { SettingsModal }   from './components/shared/SettingsModal'
 import { Toaster }         from './components/shared/Toaster'
 import { useLibrary }      from './context/useLibrary'
+import { useAuth }         from './context/useAuth'
 import { decodePlaylist, readShareParam } from './utils/playlistShare'
+
+function RequireAuth({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="auth-loading"><span className="auth-loading-dot" /></div>
+  if (!user)   return <Navigate to="/login" replace />
+  return children
+}
 
 function PlaylistImportBanner() {
   const { createPlaylistWithSongs } = useLibrary()
@@ -66,7 +76,9 @@ function App() {
   return (
     <>
       <Routes>
-        <Route element={<AppShell />}>
+        <Route path="/login"  element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route element={<RequireAuth><AppShell /></RequireAuth>}>
           <Route path="/"          element={<HomePage />} />
           <Route path="/search"    element={<SearchPage />} />
           <Route path="/library"   element={<LibraryPage />} />

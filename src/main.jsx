@@ -21,23 +21,26 @@ import { SettingsProvider }  from './context/SettingsContext'
 import { SidebarProvider }   from './context/SidebarContext'
 import { WallpaperProvider } from './context/WallpaperContext'
 import { ToastProvider }    from './context/ToastContext'
+import { AuthProvider }     from './context/AuthContext'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
-      <SettingsProvider>
-        <WallpaperProvider>
-          <LibraryProvider>
-            <PlayerProvider>
-              <SidebarProvider>
-                <ToastProvider>
-                  <App />
-                </ToastProvider>
-              </SidebarProvider>
-            </PlayerProvider>
-          </LibraryProvider>
-        </WallpaperProvider>
-      </SettingsProvider>
+      <AuthProvider>
+        <SettingsProvider>
+          <WallpaperProvider>
+            <LibraryProvider>
+              <PlayerProvider>
+                <SidebarProvider>
+                  <ToastProvider>
+                    <App />
+                  </ToastProvider>
+                </SidebarProvider>
+              </PlayerProvider>
+            </LibraryProvider>
+          </WallpaperProvider>
+        </SettingsProvider>
+      </AuthProvider>
     </BrowserRouter>
   </StrictMode>,
 )

@@ -8,6 +8,9 @@ import { fileURLToPath } from 'url'
 import path from 'path'
 import fs from 'fs'
 import { Readable } from 'stream'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import pg from 'pg'
 
 dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env') })
 
@@ -24,6 +27,52 @@ const app  = express()
 const PORT = process.env.PORT || 3001
 const YT_KEY  = process.env.YOUTUBE_API_KEY
 const YT_BASE = 'https://www.googleapis.com/youtube/v3'
+const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production'
+
+/* ── PostgreSQL ───────────────────────────────────────────── */
+const { Pool } = pg
+const pool = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+  : null
+
+if (!pool) {
+  console.warn('[warn] DATABASE_URL not set — auth routes will return 503 until configured.')
+}
+
+async function initDb() {
+  if (!pool) return
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id           SERIAL PRIMARY KEY,
+        email        TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        display_name TEXT,
+        created_at   TIMESTAMPTZ DEFAULT now()
+      )
+    `)
+    console.log('[info] Database ready')
+  } catch (err) {
+    console.error('[error] DB init failed:', err.message)
+  }
+}
+initDb()
+
+/* ── Auth helpers ─────────────────────────────────────────── */
+function signToken(user) {
+  return jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '30d' })
+}
+
+function requireAuth(req, res, next) {
+  const auth = req.headers.authorization
+  if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' })
+  try {
+    req.user = jwt.verify(auth.slice(7), JWT_SECRET)
+    next()
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' })
+  }
+}
 
 if (!YT_KEY) {
   console.warn('[warn] YOUTUBE_API_KEY is not set. Routes that call YouTube will return 503 until the key is configured.')
@@ -186,6 +235,76 @@ async function filterEmbeddable(videoIds, region) {
 /* ── Routes ───────────────────────────────────────────────── */
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
+
+/* ── Auth ─────────────────────────────────────────────────── */
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, please try again later.' },
+})
+
+app.post('/api/auth/register', authLimiter, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured.' })
+  const { email, password, displayName } = req.body ?? {}
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' })
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address.' })
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' })
+
+  try {
+    const hash = await bcrypt.hash(password, 12)
+    const { rows } = await pool.query(
+      'INSERT INTO users (email, password_hash, display_name) VALUES ($1, $2, $3) RETURNING id, email, display_name',
+      [email.toLowerCase().trim(), hash, (displayName ?? '').trim() || null],
+    )
+    const user = { id: rows[0].id, email: rows[0].email, displayName: rows[0].display_name }
+    res.status(201).json({ token: signToken(user), user })
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'An account with that email already exists.' })
+    console.error('[auth] register error:', err.message)
+    res.status(500).json({ error: 'Registration failed. Please try again.' })
+  }
+})
+
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured.' })
+  const { email, password } = req.body ?? {}
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' })
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, email, password_hash, display_name FROM users WHERE email = $1',
+      [email.toLowerCase().trim()],
+    )
+    const row = rows[0]
+    const valid = row && await bcrypt.compare(password, row.password_hash)
+    if (!valid) return res.status(401).json({ error: 'Incorrect email or password.' })
+
+    const user = { id: row.id, email: row.email, displayName: row.display_name }
+    res.json({ token: signToken(user), user })
+  } catch (err) {
+    console.error('[auth] login error:', err.message)
+    res.status(500).json({ error: 'Login failed. Please try again.' })
+  }
+})
+
+app.get('/api/auth/me', requireAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured.' })
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, email, display_name FROM users WHERE id = $1',
+      [req.user.id],
+    )
+    if (!rows[0]) return res.status(404).json({ error: 'User not found.' })
+    const user = { id: rows[0].id, email: rows[0].email, displayName: rows[0].display_name }
+    res.json({ user })
+  } catch (err) {
+    console.error('[auth] me error:', err.message)
+    res.status(500).json({ error: 'Server error.' })
+  }
+})
 
 // Search songs
 app.get('/api/search', async (req, res) => {
