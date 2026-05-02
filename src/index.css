@@ -5881,3 +5881,59 @@ textarea {
   color: var(--danger);
   border-color: var(--danger);
 }
+
+/* ── Import source buttons ──────────────────────────────────── */
+.import-btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+.import-btn-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.import-btn-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.import-source-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-soft);
+  background: var(--glass);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.import-source-btn:hover {
+  color: var(--text-1);
+  border-color: rgba(255,255,255,0.25);
+  background: var(--glass-strong);
+}
+
+.import-source-btn--spotify:hover {
+  color: #1db954;
+  border-color: #1db954;
+}
+
+.import-confirm-btn--spotify {
+  background: #1db954 !important;
+  color: #000 !important;
+}

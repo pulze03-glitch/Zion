@@ -67,3 +67,12 @@ export async function importYouTubePlaylist(url, signal) {
     signal,
   }, { friendlyError: 'Playlist import is unavailable right now.' })
 }
+
+export async function importSpotifyPlaylist(url, signal) {
+  return apiFetch('/api/spotify/playlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, region: getRegionCode() }),
+    signal,
+  }, { friendlyError: 'Spotify import is unavailable right now.' })
+}

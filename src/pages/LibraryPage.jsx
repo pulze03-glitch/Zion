@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Download, Link, Loader2, MoreHorizontal, Play, Plus, Search, Sparkles, Trash2, X } from 'lucide-react'
+import { Download, Link, Loader2, MoreHorizontal, Music, Play, Plus, Search, Sparkles, Trash2, X } from 'lucide-react'
 import { useToast } from '../hooks/useToast'
 import { useNavigate }   from 'react-router-dom'
 import { useLibrary }    from '../context/useLibrary'
@@ -9,7 +9,7 @@ import { SongImage }       from '../components/shared/SongImage'
 import { PlaylistCover }   from '../components/shared/PlaylistCover'
 import { SongActionsMenu } from '../components/shared/SongActionsMenu'
 import { generatePlaylistName } from '../services/anthropic'
-import { importYouTubePlaylist } from '../services/youtube'
+import { importYouTubePlaylist, importSpotifyPlaylist } from '../services/youtube'
 import { PageTopBar } from '../components/layout/PageTopBar'
 import { decodePlaylist } from '../utils/playlistShare'
 import { getLastLibraryTab, setLastLibraryPath, setLastLibraryTab } from '../utils/libraryHistory'
@@ -23,7 +23,7 @@ export function LibraryPage() {
   const [aiLoading,        setAiLoading]        = useState(false)
   const [aiError,          setAiError]          = useState('')
   const [menuSong,         setMenuSong]         = useState(null)
-  const [importOpen,       setImportOpen]       = useState(false)
+  const [importOpen,       setImportOpen]       = useState(false)   // 'youtube' | 'spotify' | false
   const [importUrl,        setImportUrl]        = useState('')
   const [importLoading,    setImportLoading]    = useState(false)
   const [importError,      setImportError]      = useState('')
@@ -78,14 +78,22 @@ export function LibraryPage() {
     }
   }
 
-  // ── YouTube playlist import ──────────────────────────────
+  // ── Playlist import (YouTube or Spotify) ─────────────────
+  const openImport = (type) => {
+    setImportOpen(type)
+    setImportUrl('')
+    setImportError('')
+    setImportSuccess('')
+  }
+
   const handleImport = async () => {
     if (!importUrl.trim()) return
     setImportLoading(true)
     setImportError('')
     setImportSuccess('')
     try {
-      const { title, songs } = await importYouTubePlaylist(importUrl)
+      const fn = importOpen === 'spotify' ? importSpotifyPlaylist : importYouTubePlaylist
+      const { title, songs } = await fn(importUrl)
       await createPlaylistWithSongs(title, songs)
       setImportSuccess(`Imported "${title}" — ${songs.length} songs added.`)
       setImportUrl('')
@@ -260,15 +268,28 @@ export function LibraryPage() {
               </div>
               {aiError && <p className="ai-error-msg">{aiError}</p>}
 
-              {/* Import from YouTube */}
-              <button
-                type="button"
-                className="import-trigger-btn"
-                onClick={() => { setImportOpen(true); setImportError(''); setImportSuccess('') }}
-              >
-                <Download size={14} />
-                Import from YouTube
-              </button>
+              {/* Import buttons */}
+              <div className="import-btn-group">
+                <p className="import-btn-label">Import playlist from</p>
+                <div className="import-btn-row">
+                  <button
+                    type="button"
+                    className="import-source-btn"
+                    onClick={() => openImport('youtube')}
+                  >
+                    <Download size={14} />
+                    YouTube
+                  </button>
+                  <button
+                    type="button"
+                    className="import-source-btn import-source-btn--spotify"
+                    onClick={() => openImport('spotify')}
+                  >
+                    <Music size={14} />
+                    Spotify
+                  </button>
+                </div>
+              </div>
 
               {/* Import from share link */}
               <div className="share-link-import-row">
@@ -293,23 +314,29 @@ export function LibraryPage() {
               {shareLinkError && <p className="share-link-error">{shareLinkError}</p>}
             </div>
 
-            {/* ── Import modal ───────────────────────────────── */}
+            {/* ── Import modal (YouTube or Spotify) ─────────── */}
             {importOpen && (
               <div className="import-modal-overlay" onClick={() => setImportOpen(false)}>
                 <div className="import-modal glass" onClick={(e) => e.stopPropagation()}>
                   <div className="import-modal-header">
-                    <h2>Import YouTube Playlist</h2>
+                    <h2>
+                      {importOpen === 'spotify' ? 'Import Spotify Playlist' : 'Import YouTube Playlist'}
+                    </h2>
                     <button type="button" className="np-icon-btn" onClick={() => setImportOpen(false)}>
                       <X size={18} />
                     </button>
                   </div>
                   <p className="import-modal-hint">
-                    Paste a YouTube playlist URL and it will import automatically.
+                    {importOpen === 'spotify'
+                      ? 'Paste a public Spotify playlist link. Tracks are matched to YouTube automatically.'
+                      : 'Paste a YouTube playlist URL and it will import automatically.'}
                   </p>
                   <input
                     type="url"
                     className="search-input import-url-input"
-                    placeholder="https://www.youtube.com/playlist?list=…"
+                    placeholder={importOpen === 'spotify'
+                      ? 'https://open.spotify.com/playlist/…'
+                      : 'https://www.youtube.com/playlist?list=…'}
                     value={importUrl}
                     onChange={(e) => setImportUrl(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleImport()}
@@ -318,13 +345,12 @@ export function LibraryPage() {
                   {importError && <p className="import-modal-error">{importError}</p>}
                   {importSuccess && <p className="import-modal-success">{importSuccess}</p>}
                   <div className="import-modal-actions">
-                    <button type="button" className="hub-api-error-btn"
-                      onClick={() => setImportOpen(false)}>
+                    <button type="button" className="hub-api-error-btn" onClick={() => setImportOpen(false)}>
                       Cancel
                     </button>
                     <button
                       type="button"
-                      className="song-play-btn import-confirm-btn"
+                      className={`song-play-btn import-confirm-btn${importOpen === 'spotify' ? ' import-confirm-btn--spotify' : ''}`}
                       onClick={handleImport}
                       disabled={importLoading || !importUrl.trim()}
                     >

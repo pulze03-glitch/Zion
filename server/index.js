@@ -602,6 +602,128 @@ app.get('/api/audio/:videoId', async (req, res) => {
   }
 })
 
+/* ── Spotify playlist import ──────────────────────────────── */
+
+const SPOTIFY_CLIENT_ID     = process.env.SPOTIFY_CLIENT_ID
+const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET
+
+let spotifyTokenCache = null
+
+async function getSpotifyToken() {
+  if (spotifyTokenCache && spotifyTokenCache.exp > Date.now()) return spotifyTokenCache.token
+  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+    const e = new Error('Spotify credentials not configured on the server.')
+    e.status = 503
+    throw e
+  }
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: 'Basic ' + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64'),
+    },
+    body: 'grant_type=client_credentials',
+    signal: AbortSignal.timeout(8_000),
+  })
+  const data = await res.json()
+  if (!res.ok || !data.access_token) throw new Error(data.error_description || 'Failed to get Spotify token')
+  spotifyTokenCache = { token: data.access_token, exp: Date.now() + (data.expires_in - 30) * 1000 }
+  return spotifyTokenCache.token
+}
+
+async function fetchSpotifyPlaylist(playlistId) {
+  const token = await getSpotifyToken()
+  const tracks = []
+  let url = `https://api.spotify.com/v1/playlists/${playlistId}?fields=name,tracks(items(track(name,artists(name),duration_ms)),next)`
+
+  const first = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!first.ok) {
+    const d = await first.json().catch(() => ({}))
+    const msg = d?.error?.message ?? `Spotify API error ${first.status}`
+    if (first.status === 404) throw Object.assign(new Error('Playlist not found — make sure it is public.'), { status: 404 })
+    throw new Error(msg)
+  }
+  const firstData = await first.json()
+  const playlistName = firstData.name
+
+  const addItems = (items) => {
+    for (const item of items ?? []) {
+      const t = item?.track
+      if (!t?.name) continue
+      const artist = t.artists?.[0]?.name ?? ''
+      if (t.duration_ms < 30_000) continue // skip < 30s (interludes/skits)
+      tracks.push({ name: t.name, artist })
+    }
+  }
+
+  addItems(firstData.tracks?.items)
+  let nextUrl = firstData.tracks?.next
+
+  // Paginate up to 10 pages (500 songs max)
+  for (let page = 0; page < 9 && nextUrl; page++) {
+    const pageRes = await fetch(nextUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!pageRes.ok) break
+    const pageData = await pageRes.json()
+    addItems(pageData.items)
+    nextUrl = pageData.next
+  }
+
+  return { name: playlistName, tracks }
+}
+
+app.post('/api/spotify/playlist', async (req, res) => {
+  const { url } = req.body ?? {}
+  if (!url) return res.status(400).json({ error: 'url is required' })
+
+  const match = String(url).match(/playlist\/([A-Za-z0-9]+)/)
+  if (!match) return res.status(400).json({ error: 'No Spotify playlist ID found in that URL.' })
+  const playlistId = match[1]
+  const region = normalizeRegion(req.body.region ?? 'US')
+
+  try {
+    const { name, tracks } = await fetchSpotifyPlaylist(playlistId)
+    if (!tracks.length) return res.status(404).json({ error: 'No playable tracks found in this playlist.' })
+
+    // Search YouTube for each track (cap at 50 to stay within quota)
+    const capped = tracks.slice(0, 50)
+    const songs = []
+
+    for (const track of capped) {
+      const q = `${track.artist} ${track.name}`.trim()
+      try {
+        const cacheKey = `search:${region}:${q.toLowerCase()}:1`
+        let results = cacheGet(cacheKey)
+        if (!results) {
+          const data = await ytFetch('search', {
+            part: 'snippet', q, type: 'video',
+            videoCategoryId: '10', videoEmbeddable: 'true',
+            videoSyndicated: 'true', regionCode: region, maxResults: '3',
+          })
+          const ids  = (data.items ?? []).map(i => i?.id?.videoId).filter(Boolean)
+          const vids = await fetchMusicVideos(ids, region)
+          results = vids.map(mapVideo).filter(s => s.id)
+          if (results.length) cacheSet(cacheKey, results, 5 * 60_000)
+        }
+        if (results[0]) songs.push(results[0])
+      } catch {
+        // skip track if search fails
+      }
+    }
+
+    if (!songs.length) return res.status(404).json({ error: 'Could not match any tracks to YouTube videos.' })
+    res.json({ title: name, songs })
+  } catch (err) {
+    console.error('[spotify] import error:', err.message)
+    res.status(err.status ?? 500).json({ error: err.message })
+  }
+})
+
 /* ── Serve built frontend in production ───────────────────── */
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dist = path.resolve(__dirname, '..', 'dist')
